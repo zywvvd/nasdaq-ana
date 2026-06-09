@@ -152,16 +152,6 @@ DATA_FILES = {
     'dd_definitions': '分析_所有回撤区间定义.csv',
 }
 
-# ── V4 遗留参数（保留供参考，V6 使用 v6_config.py）──
-SPY_DATA_PATH = os.path.join(DATA_DIR, "数据_SPY标普500ETF_15年.csv")
-MODEL_TYPE = 'lgbm'
-LGBM_PARAMS = {
-    'n_estimators': 1000, 'max_depth': 6, 'learning_rate': 0.05,
-    'reg_alpha': 0.1, 'reg_lambda': 1.0, 'min_child_samples': 20,
-    'subsample': 0.8, 'colsample_bytree': 0.6,
-    'random_state': 42, 'n_jobs': -1, 'verbose': -1,
-}
-
 
 def data_path(key):
     """根据 key 返回 CSV 的绝对路径"""

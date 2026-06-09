@@ -5,7 +5,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from lib.data_fetcher import fetch_merged_training_data, fetch_training_data
+from lib.data_fetcher import fetch_training_data
 from lib.features import compute_features
 from lib.v6_trainer import train_v6
 from lib.v6_scorer import predict_v6, print_prediction
