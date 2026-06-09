@@ -17,6 +17,9 @@ from .v6_config import (
     HORIZONS, BASE_MODEL_PARAMS, HORIZON_PARAMS, CV_CONFIG, FEATURE_SELECTION,
     META_CONFIG, MODEL_DIR,
 )
+
+# 长horizon用更少特征
+_LONG_HORIZONS = {10, 30}
 from .v6_labels import build_all_labels
 
 
@@ -59,7 +62,9 @@ def train_v6():
 
         # 阶段1: 特征选择
         h_params = HORIZON_PARAMS.get(horizon, BASE_MODEL_PARAMS)
-        selected_idx, selected_names = _select_features(X, y, FEATURE_COLS, h_params)
+        top_k = FEATURE_SELECTION.get('top_k_long', 20) if horizon in _LONG_HORIZONS \
+                else FEATURE_SELECTION.get('top_k', 40)
+        selected_idx, selected_names = _select_features(X, y, FEATURE_COLS, h_params, top_k)
 
         # 阶段2: 用选中特征训练
         X_sel = X[:, selected_idx]
@@ -67,10 +72,15 @@ def train_v6():
         model.set_params(**h_params)
         model.fit(X_sel, y)
 
+        # 训练集表现（监控过拟合）
+        train_pred = model.predict(X_sel)
+        train_dir = (np.sign(train_pred) == np.sign(y)).mean()
+
         # Walk-forward CV
         oos_df = _rolling_cv(X_sel, y, dates, horizon, selected_idx, h_params)
 
-        # 评估
+        # 评估（含训练/OOS差距）
+        _evaluate_horizon(oos_df, horizon, train_dir)
         _evaluate_horizon(oos_df, horizon)
 
         # 保存
@@ -99,17 +109,18 @@ def train_v6():
     print(f"\n元数据已保存: {meta_path}")
 
 
-def _select_features(X, y, feature_names, base_params=None):
+def _select_features(X, y, feature_names, base_params=None, top_k=None):
     """阶段1 特征选择：训练临时模型取 top_k。"""
     if base_params is None:
         base_params = BASE_MODEL_PARAMS
+    if top_k is None:
+        top_k = FEATURE_SELECTION.get('top_k', 40)
     params = dict(base_params, n_estimators=100, verbose=-1)
     tmp = create_model('lgbm')
     tmp.set_params(**params)
     tmp.fit(X, y)
 
     imp = pd.Series(tmp.feature_importances_, index=feature_names)
-    top_k = FEATURE_SELECTION.get('top_k', 40)
     top = imp.sort_values(ascending=False).head(top_k)
     selected = top.index.tolist()
     idx = [list(feature_names).index(f) for f in selected]
@@ -168,7 +179,7 @@ def _rolling_cv(X, y, dates, horizon, selected_idx, params=None):
     return oos
 
 
-def _evaluate_horizon(oos_df, horizon):
+def _evaluate_horizon(oos_df, horizon, train_dir=None):
     """评估单个 horizon 的 OOS 表现。"""
     if oos_df.empty:
         print(f"  {horizon}d: 无OOS数据")
@@ -198,7 +209,10 @@ def _evaluate_horizon(oos_df, horizon):
           f"做多准确={long_acc:.1%}(n={long_mask.sum()}) | "
           f"做空准确={short_acc:.1%}(n={short_mask.sum()})")
     print(f"       IC={ic:.4f} | AUC={auc:.3f} | MAE={mae:.3f}")
-    print(f"       pred: [{pred.min():.3f}, {pred.max():.3f}] mean={pred.mean():.3f}")
+    if train_dir is not None:
+        gap = train_dir - dir_correct
+        warn = " ⚠️ 过拟合" if gap > 0.15 else (" ⚠️ 严重过拟合" if gap > 0.25 else "")
+        print(f"       训练={train_dir:.1%} → OOS={dir_correct:.1%} 差距={gap:.1%}{warn}")
 
 
 def _build_meta_features(merged, pred_cols):
