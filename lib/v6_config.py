@@ -50,11 +50,11 @@ BASE_MODEL_PARAMS = {
     'subsample': 0.8, 'colsample_bytree': 0.5,
 }
 
-# ── 特征选择（10d用更少特征防过拟合）──
+# ── 特征选择（训练数据充足，放宽维度限制）──
 FEATURE_SELECTION = {
     'enabled': True,
-    'top_k': 40,
-    'top_k_long': 20,
+    'top_k': 80,
+    'top_k_long': 50,
 }
 
 # ── Walk-forward CV（非重叠OOS）──
