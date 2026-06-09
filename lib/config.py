@@ -111,6 +111,24 @@ FEATURE_COLS = [
     # 3T. 跨指标比率（3）+ 补充
     'VIX_Volatility_ratio', 'VIX9D_VIX3M_Ratio', 'ATR_vs_VIX_change_5d',
     'Return_1d', 'OBV_change_5d',
+
+    # ── V7 新增特征（26）──
+    # 7A. 隔夜/日内分解
+    'Overnight_ret', 'Intraday_ret', 'Overnight_intraday_spread', 'Overnight_zscore_20',
+    # 7B. VIX期限结构
+    'VIX_slope_9d_3m', 'VIX_slope_spot_3m', 'VIX_curvature', 'VIX_slope_chg_3d', 'VIX_pctile_252',
+    # 7C. 波动率风险溢价
+    'Vol_risk_premium', 'Vol_ratio_10d_20d',
+    # 7D. Kaufman效率系数
+    'ER_5', 'ER_10', 'ER_20',
+    # 7E. 跨资产分歧
+    'Credit_equity_div_5d', 'Credit_equity_div_10d', 'Bond_equity_div_5d', 'Eq_TLT_corr_20d',
+    # 7F. 量价背离
+    'Conviction', 'Vol_price_corr_10d', 'Up_down_vol_ratio',
+    # 7G. 回撤状态
+    'Current_drawdown', 'Ulcer_index_14', 'Days_since_63d_high',
+    # 7H. 日历效应
+    'Dow_sin', 'Dow_cos',
 ]
 
 N_FEATURES = len(FEATURE_COLS)

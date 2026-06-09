@@ -299,4 +299,66 @@ def compute_features(df):
     df['VIX9D_VIX3M_Ratio'] = df['VIX9D'] / (df['VIX3M'] + 1e-10)
     df['ATR_vs_VIX_change_5d'] = df['ATR_vs_VIX'].diff(5)
 
+    # ══════════════════════════════════════
+    # V7: 新增特征（Tier 1 研究验证）
+    # ══════════════════════════════════════
+
+    o = df['Open']
+
+    # ── 7A. 隔夜/日内分解（4）──
+    overnight_ret = (o - c.shift(1)) / c.shift(1)
+    intraday_ret = (c - o) / o
+    df['Overnight_ret'] = overnight_ret
+    df['Intraday_ret'] = intraday_ret
+    df['Overnight_intraday_spread'] = overnight_ret - intraday_ret
+    df['Overnight_zscore_20'] = (overnight_ret - overnight_ret.rolling(20).mean()) / (overnight_ret.rolling(20).std() + 1e-10)
+
+    # ── 7B. VIX期限结构斜率（5）──
+    df['VIX_slope_9d_3m'] = df['VIX9D'] - df['VIX3M']
+    df['VIX_slope_spot_3m'] = df['VIX'] - df['VIX3M']
+    df['VIX_curvature'] = df['VIX9D'] - 2 * df['VIX'] + df['VIX3M']
+    df['VIX_slope_chg_3d'] = df['VIX_slope_9d_3m'].diff(3)
+    df['VIX_pctile_252'] = df['VIX'].rolling(252, min_periods=60).rank(pct=True)
+
+    # ── 7C. 波动率风险溢价（2）──
+    realized_vol_20 = c.pct_change().rolling(20).std() * np.sqrt(252)
+    df['Vol_risk_premium'] = df['VIX'] / 100 - realized_vol_20
+    df['Vol_ratio_10d_20d'] = (c.pct_change().rolling(10).std() * np.sqrt(252)) / (realized_vol_20 + 1e-10)
+
+    # ── 7D. Kaufman效率系数（3）──
+    def _er(close, period):
+        direction = (close - close.shift(period)).abs()
+        volatility = close.diff().abs().rolling(period).sum()
+        return direction / (volatility + 1e-10)
+    df['ER_5'] = _er(c, 5)
+    df['ER_10'] = _er(c, 10)
+    df['ER_20'] = _er(c, 20)
+
+    # ── 7E. 跨资产分歧（4）──
+    df['Credit_equity_div_5d'] = df['HYG'].pct_change(5) - c.pct_change(5)
+    df['Credit_equity_div_10d'] = df['HYG'].pct_change(10) - c.pct_change(10)
+    df['Bond_equity_div_5d'] = df['TLT'].pct_change(5) - c.pct_change(5)
+    df['Eq_TLT_corr_20d'] = c.pct_change().rolling(20).corr(df['TLT'].pct_change())
+
+    # ── 7F. 量价背离（3）──
+    body_range = (c - o).abs() / (h - lo + 1e-10)
+    df['Conviction'] = v * np.sign(c - o) * body_range
+    df['Vol_price_corr_10d'] = c.pct_change().rolling(10).corr(v)
+    up_vol = v.where(c > o, 0).rolling(10).mean()
+    dn_vol = v.where(c < o, 0).rolling(10).mean()
+    df['Up_down_vol_ratio'] = up_vol / (dn_vol + 1)
+
+    # ── 7G. 回撤状态（3）──
+    roll_high_63 = c.rolling(63).max()
+    df['Current_drawdown'] = (c - roll_high_63) / roll_high_63
+    dd_sq = df['Current_drawdown'] ** 2
+    df['Ulcer_index_14'] = np.sqrt(dd_sq.rolling(14).mean())
+    df['Days_since_63d_high'] = c.rolling(63).apply(lambda x: 63 - np.argmax(x), raw=True)
+
+    # ── 7H. 日历效应（2）──
+    if hasattr(df.index, 'dayofweek'):
+        dow = df.index.dayofweek
+        df['Dow_sin'] = np.sin(2 * np.pi * dow / 5)
+        df['Dow_cos'] = np.cos(2 * np.pi * dow / 5)
+
     return df
