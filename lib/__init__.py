@@ -7,3 +7,6 @@ from .model_factory import create_model
 from .trainer import train_and_evaluate
 from .predictor import predict
 from .evaluator import evaluate
+from .v6_labels import build_direction_labels, build_all_labels
+from .v6_trainer import train_v6
+from .v6_scorer import predict_v6
