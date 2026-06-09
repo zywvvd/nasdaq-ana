@@ -1,0 +1,28 @@
+{
+  "version": "V5",
+  "method": "rule_based",
+  "top_weights": {
+    "rsi_high": 3.0,
+    "dist_ma60_high": 2.5,
+    "dist_ma200_high": 1.5,
+    "vix_low": 1.5,
+    "vol_low": 1.0,
+    "mom_high": 1.0,
+    "cape_high": 1.5,
+    "skew_high": 1.0
+  },
+  "bot_weights": {
+    "rsi_low": 3.0,
+    "dist_ma60_low": 2.5,
+    "dist_ma200_low": 1.5,
+    "vix_high": 1.5,
+    "vol_high": 1.0,
+    "mom_low": 1.0,
+    "dd_deep": 2.0,
+    "hyg_tlt_low": 1.0
+  },
+  "top_threshold": 20,
+  "bot_threshold": 20,
+  "oos_top_f1": 0.21986301366870015,
+  "oos_bot_f1": 0.2951724137514943
+}

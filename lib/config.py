@@ -152,70 +152,15 @@ DATA_FILES = {
     'dd_definitions': '分析_所有回撤区间定义.csv',
 }
 
-# ── 模型输出路径 ──
-MODEL_TOP_PATH = os.path.join(MODEL_DIR, "model_top_score.pkl")
-MODEL_BOT_PATH = os.path.join(MODEL_DIR, "model_bottom_score.pkl")
-MODEL_META_PATH = os.path.join(MODEL_DIR, "model_meta.json")
-PREDICTIONS_PATH = os.path.join(DATA_DIR, "分析_ML预测结果_V4.csv")
-
-# ══════════════════════════════════════
-# V4 配置
-# ══════════════════════════════════════
-
-# ── V4: 模型类型 ──
-MODEL_TYPE = 'lgbm'  # 'rf' 或 'lgbm'
-
-# ── V4: LightGBM 超参数 ──
-LGBM_PARAMS = {
-    'n_estimators': 1000,
-    'max_depth': 6,
-    'learning_rate': 0.05,
-    'reg_alpha': 0.1,
-    'reg_lambda': 1.0,
-    'min_child_samples': 20,
-    'subsample': 0.8,
-    'colsample_bytree': 0.6,
-    'random_state': 42,
-    'n_jobs': -1,
-    'verbose': -1,
-}
-
-# ── V4: 特征选择 ──
-FEATURE_SELECTION = {
-    'enabled': True,
-    'top_k': 50,
-    'importance_threshold': 200,
-}
-
-# ── V4: 前向滚动验证 ──
-CV_CONFIG = {
-    'method': 'rolling',
-    'train_window': 504,
-    'test_window': 126,
-    'step': 63,
-    'label_gap': 60,  # 训练/测试之间的标签前瞻 gap
-}
-
-# ── V4: 标签配置 ──
-LABEL_CONFIG = {
-    'scheme': 'forward_drawdown',
-    'forward_windows': [20, 40, 60],
-    'gaussian_sigma': 10,
-    'dd_threshold': 0.10,
-}
-
-# ── V4: 概率校准 ──
-CALIBRATION_CONFIG = {
-    'enabled': True,
-    'event_window': 30,
-}
-
-# ── V4: 校准模型路径 ──
-MODEL_CAL_TOP_PATH = os.path.join(MODEL_DIR, "model_cal_top.pkl")
-MODEL_CAL_BOT_PATH = os.path.join(MODEL_DIR, "model_cal_bot.pkl")
-
-# ── V4: SPY 数据路径 ──
+# ── V4 遗留参数（保留供参考，V6 使用 v6_config.py）──
 SPY_DATA_PATH = os.path.join(DATA_DIR, "数据_SPY标普500ETF_15年.csv")
+MODEL_TYPE = 'lgbm'
+LGBM_PARAMS = {
+    'n_estimators': 1000, 'max_depth': 6, 'learning_rate': 0.05,
+    'reg_alpha': 0.1, 'reg_lambda': 1.0, 'min_child_samples': 20,
+    'subsample': 0.8, 'colsample_bytree': 0.6,
+    'random_state': 42, 'n_jobs': -1, 'verbose': -1,
+}
 
 
 def data_path(key):
