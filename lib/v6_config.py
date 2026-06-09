@@ -9,25 +9,51 @@ HORIZONS = [1, 3, 5, 7, 10, 30]
 
 # ── 标签配置 ──
 LABEL_CONFIG = {
-    'vol_window': 60,
+    'rank_window': 504,
     'smooth_type': 'uniform',       # 'uniform' 或 'median'
     'smooth_window': lambda h: max(5, h // 3),
     'clip_range': (-1.0, 1.0),
 }
 
-# ── Base 模型参数（保守防过拟合）──
+# ── 逐 horizon 最优参数 ──
+HORIZON_PARAMS = {
+    1: {
+        'n_estimators': 500, 'max_depth': 3, 'learning_rate': 0.01,
+        'reg_alpha': 2.0, 'reg_lambda': 10.0, 'min_child_samples': 100,
+        'subsample': 0.8, 'colsample_bytree': 0.6,
+    },
+    3: {
+        'n_estimators': 300, 'max_depth': 6, 'learning_rate': 0.05,
+        'reg_alpha': 2.0, 'reg_lambda': 15.0, 'min_child_samples': 150,
+        'subsample': 0.8, 'colsample_bytree': 0.5,
+    },
+    5: {
+        'n_estimators': 200, 'max_depth': 6, 'learning_rate': 0.01,
+        'reg_alpha': 0.5, 'reg_lambda': 10.0, 'min_child_samples': 150,
+        'subsample': 0.7, 'colsample_bytree': 0.6,
+    },
+    7: {
+        'n_estimators': 500, 'max_depth': 6, 'learning_rate': 0.01,
+        'reg_alpha': 2.0, 'reg_lambda': 3.0, 'min_child_samples': 150,
+        'subsample': 0.8, 'colsample_bytree': 0.5,
+    },
+    10: {
+        'n_estimators': 200, 'max_depth': 3, 'learning_rate': 0.05,
+        'reg_alpha': 1.0, 'reg_lambda': 5.0, 'min_child_samples': 150,
+        'subsample': 0.7, 'colsample_bytree': 0.6,
+    },
+    30: {
+        'n_estimators': 500, 'max_depth': 5, 'learning_rate': 0.08,
+        'reg_alpha': 4.0, 'reg_lambda': 3.0, 'min_child_samples': 50,
+        'subsample': 0.8, 'colsample_bytree': 0.4,
+    },
+}
+
+# 默认参数（用于特征选择阶段）
 BASE_MODEL_PARAMS = {
-    'n_estimators': 200,
-    'max_depth': 4,
-    'learning_rate': 0.05,
-    'reg_alpha': 1.0,
-    'reg_lambda': 5.0,
-    'min_child_samples': 100,
-    'subsample': 0.8,
-    'colsample_bytree': 0.5,
-    'random_state': 42,
-    'n_jobs': 4,
-    'verbose': -1,
+    'n_estimators': 200, 'max_depth': 4, 'learning_rate': 0.05,
+    'reg_alpha': 1.0, 'reg_lambda': 5.0, 'min_child_samples': 100,
+    'subsample': 0.8, 'colsample_bytree': 0.5,
 }
 
 # ── 特征选择 ──
