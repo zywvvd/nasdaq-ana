@@ -71,3 +71,54 @@ META_CONFIG = {
     'long_horizons': [7, 10],
     'weights': {1: 0.5, 3: 0.8, 5: 1.0, 7: 1.2, 10: 1.5},
 }
+
+# ═══════════════════════════════════════════════════════════════
+# 多股票训练配置（Nasdaq 100 成分股）
+# ═══════════════════════════════════════════════════════════════
+MULTI_STOCK_CONFIG = {
+    'download_period': '15y',
+    'max_workers': 5,
+    'min_history_years': 5,
+}
+
+# 100x 数据量下的模型参数（min_child_samples 按比例放大）
+MULTI_STOCK_MODEL_PARAMS = {
+    1: {
+        'n_estimators': 500, 'max_depth': 4, 'learning_rate': 0.01,
+        'reg_alpha': 2.0, 'reg_lambda': 10.0, 'min_child_samples': 2000,
+        'subsample': 0.6, 'colsample_bytree': 0.5,
+    },
+    3: {
+        'n_estimators': 400, 'max_depth': 4, 'learning_rate': 0.02,
+        'reg_alpha': 3.0, 'reg_lambda': 15.0, 'min_child_samples': 2000,
+        'subsample': 0.6, 'colsample_bytree': 0.4,
+    },
+    5: {
+        'n_estimators': 300, 'max_depth': 4, 'learning_rate': 0.02,
+        'reg_alpha': 5.0, 'reg_lambda': 20.0, 'min_child_samples': 2000,
+        'subsample': 0.6, 'colsample_bytree': 0.4,
+    },
+    7: {
+        'n_estimators': 300, 'max_depth': 3, 'learning_rate': 0.02,
+        'reg_alpha': 5.0, 'reg_lambda': 20.0, 'min_child_samples': 2500,
+        'subsample': 0.6, 'colsample_bytree': 0.3,
+    },
+    10: {
+        'n_estimators': 300, 'max_depth': 3, 'learning_rate': 0.02,
+        'reg_alpha': 5.0, 'reg_lambda': 25.0, 'min_child_samples': 2500,
+        'subsample': 0.6, 'colsample_bytree': 0.3,
+    },
+}
+
+MULTI_STOCK_FEATURE_SELECTION = {
+    'enabled': True,
+    'top_k': 120,
+    'top_k_long': 80,
+}
+
+MULTI_STOCK_CV_CONFIG = {
+    'train_window': 504,
+    'test_window': 63,
+    'step': 63,
+    'n_folds': 20,
+}

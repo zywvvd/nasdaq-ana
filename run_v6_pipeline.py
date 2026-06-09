@@ -17,6 +17,12 @@ def step_train():
     train_v6()
 
 
+def step_train_multi():
+    print("\n[V6 多股票训练]")
+    from lib.v6_trainer import train_v6_multi_stock
+    train_v6_multi_stock()
+
+
 def step_predict():
     print("\n[V6 预测]")
     df = fetch_training_data()
@@ -32,6 +38,7 @@ def main():
     parser = argparse.ArgumentParser(description='V6 多尺度方向预测系统')
     parser.add_argument('--train', action='store_true', help='训练模型')
     parser.add_argument('--predict', action='store_true', help='生成预测')
+    parser.add_argument('--multi', action='store_true', help='多股票训练 (Nasdaq 100)')
     parser.add_argument('--all', action='store_true', help='训练+预测')
     args = parser.parse_args()
 
@@ -39,7 +46,10 @@ def main():
         args.all = True
 
     if args.all or args.train:
-        step_train()
+        if args.multi:
+            step_train_multi()
+        else:
+            step_train()
 
     if args.all or args.predict:
         step_predict()

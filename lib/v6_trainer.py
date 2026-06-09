@@ -16,11 +16,13 @@ from .model_factory import create_model
 from .v6_config import (
     HORIZONS, BASE_MODEL_PARAMS, HORIZON_PARAMS, CV_CONFIG, FEATURE_SELECTION,
     META_CONFIG, MODEL_DIR,
+    MULTI_STOCK_CONFIG, MULTI_STOCK_MODEL_PARAMS, MULTI_STOCK_FEATURE_SELECTION,
+    MULTI_STOCK_CV_CONFIG,
 )
 
 # 长horizon用更少特征
 _LONG_HORIZONS = {10, 30}
-from .v6_labels import build_all_labels
+from .v6_labels import build_all_labels, build_zscore_labels
 
 
 def train_v6():
@@ -472,3 +474,297 @@ def _eval_event_detection(sig_dates, event_dates, full_range):
                 if any(abs((d - e).days) <= 30 for d in sig_dates)) / len(relevant)
     f1 = 2 * precision * recall / (precision + recall + 1e-10)
     return precision, recall, f1
+
+
+# ═══════════════════════════════════════════════════════════════
+# 多股票训练（Nasdaq 100 成分股）
+# ═══════════════════════════════════════════════════════════════
+
+def train_v6_multi_stock():
+    """V6 多股票训练：用 Nasdaq 100 成分股联合训练。"""
+    from .ndx100_tickers import get_ndx100_tickers
+    from .macro_data import fetch_macro_indicators
+    from .stock_data_manager import get_all_stock_data
+    from .v6_labels import build_direction_labels
+
+    os.makedirs(MODEL_DIR, exist_ok=True)
+
+    print("=" * 70)
+    print("V6 多尺度方向预测系统 — 多股票训练 (Nasdaq 100)")
+    print("=" * 70)
+
+    # 1. 加载宏观指标（所有股票共享）
+    print("\n加载宏观指标...")
+    macro_df = fetch_macro_indicators()
+    print(f"  宏观数据: {len(macro_df)} 行, {len(macro_df.columns)} 列")
+
+    # 2. 获取所有成分股数据
+    print("\n获取 Nasdaq 100 成分股数据...")
+    tickers = get_ndx100_tickers()
+    stock_data = get_all_stock_data(tickers, period=MULTI_STOCK_CONFIG['download_period'])
+
+    # 3. 逐股票计算特征并堆叠
+    print("\n计算特征并堆叠...")
+    min_years = MULTI_STOCK_CONFIG['min_history_years']
+    min_rows = min_years * 252
+    all_dfs = []
+
+    for ticker in sorted(stock_data.keys()):
+        stock_df = stock_data[ticker]
+        if len(stock_df) < min_rows:
+            continue
+
+        # 按Date对齐，merge宏观指标
+        merged = stock_df.join(macro_df, how='left')
+        merged = merged.ffill()
+
+        # 需要17列才能计算特征
+        required = ['Open', 'High', 'Low', 'Close', 'Volume',
+                     'VIX', 'VVIX', 'VIX_VVIX_Ratio']
+        if merged[required].isna().any(axis=1).all():
+            continue
+
+        # 计算特征（per-stock，避免跨股票rolling泄漏）
+        feat_df = compute_features(merged.copy())
+
+        # 只保留有足够特征的行
+        feat_count = feat_df[FEATURE_COLS].notna().sum(axis=1)
+        feat_df = feat_df[feat_count >= len(FEATURE_COLS) * 0.8]
+
+        if len(feat_df) < min_rows // 2:
+            continue
+
+        feat_df['ticker'] = ticker
+        all_dfs.append(feat_df)
+
+    if not all_dfs:
+        print("  错误: 无有效股票数据!")
+        return
+
+    combined = pd.concat(all_dfs, axis=0).sort_index()
+    print(f"  合并数据: {len(combined)} 行, {combined['ticker'].nunique()} 只股票")
+
+    # 4. 同时加载纳斯达克指数（用于元层OOS评估）
+    ndx_df = fetch_training_data()
+    ndx_df = compute_features(ndx_df)
+    ndx_labels = build_all_labels(ndx_df)
+
+    # 5. 逐 horizon 训练
+    all_meta = {}
+    ndx_oos_all = {}
+
+    ms_feat_sel = MULTI_STOCK_FEATURE_SELECTION
+    ms_params = MULTI_STOCK_MODEL_PARAMS
+
+    for horizon in HORIZONS:
+        print(f"\n{'=' * 70}")
+        print(f"Horizon = {horizon}d (多股票)")
+        print("=" * 70)
+
+        # 按股票分组计算标签（z-score，跨股票可比）
+        label_col = f'label_{horizon}d'
+        combined[label_col] = combined.groupby('ticker', group_keys=False)['Close'].apply(
+            lambda s: build_zscore_labels(s, horizon)
+        )
+
+        # 准备训练数据
+        valid = combined.dropna(subset=FEATURE_COLS + [label_col])
+        print(f"  有效样本: {len(valid)} ({valid['ticker'].nunique()} 只股票)")
+
+        X = valid[FEATURE_COLS].values
+        y = valid[label_col].values
+        dates = valid.index
+        tickers_col = valid['ticker'].values
+
+        # 特征选择
+        h_params = ms_params.get(horizon, BASE_MODEL_PARAMS)
+        top_k = ms_feat_sel.get('top_k_long', 80) if horizon in _LONG_HORIZONS \
+                else ms_feat_sel.get('top_k', 120)
+        selected_idx, selected_names = _select_features(X, y, FEATURE_COLS, h_params, top_k)
+
+        # 全量训练
+        X_sel = X[:, selected_idx]
+        model = create_model('lgbm')
+        model.set_params(**h_params)
+        model.fit(X_sel, y)
+
+        # 训练集表现
+        train_pred = model.predict(X_sel)
+        train_dir = (np.sign(train_pred) == np.sign(y)).mean()
+
+        # Walk-forward CV（按日期分割，含所有股票）
+        oos_df = _rolling_cv_multi_stock(
+            valid, selected_idx, selected_names, horizon, h_params)
+
+        # 评估全样本
+        print(f"  === 全样本OOS ({len(oos_df)} 条) ===")
+        _evaluate_horizon(oos_df, horizon, train_dir)
+
+        # 评估仅NDX指数
+        ndx_oos = oos_df[oos_df['ticker'] == '__NDX__'] if 'ticker' in oos_df.columns else oos_df
+        if len(ndx_oos) > 50:
+            print(f"  === NDX指数OOS ({len(ndx_oos)} 条) ===")
+            _evaluate_horizon(ndx_oos, horizon)
+
+        # 保存模型
+        model_path = os.path.join(MODEL_DIR, f'model_{horizon}d.pkl')
+        joblib.dump(model, model_path)
+
+        meta = {
+            'horizon': horizon,
+            'features': selected_names,
+            'n_features': len(selected_names),
+            'params': h_params,
+            'multi_stock': True,
+            'n_stocks': int(valid['ticker'].nunique()),
+        }
+        all_meta[f'{horizon}d'] = meta
+
+        # 提取纳斯达克指数的OOS（用于元层）
+        if not oos_df.empty:
+            # 重新对纳斯达克指数做walk-forward CV获取OOS
+            ndx_label = ndx_labels[horizon]
+            ndx_h = ndx_df.copy()
+            ndx_h[label_col] = ndx_label
+            ndx_valid = ndx_h.dropna(subset=FEATURE_COLS + [label_col])
+            ndx_oos = _rolling_cv_ndx_with_model(
+                ndx_valid, model, selected_idx, selected_names, horizon)
+            ndx_oos_all[horizon] = ndx_oos
+
+    # 6. 元层聚合（用纳斯达克指数OOS）
+    print(f"\n{'=' * 70}")
+    print("元层聚合")
+    print("=" * 70)
+    if ndx_oos_all:
+        _meta_aggregation(ndx_oos_all, ndx_df)
+
+    # 7. 保存元数据
+    meta_path = os.path.join(MODEL_DIR, 'v6_meta.json')
+    with open(meta_path, 'w') as f:
+        json.dump(all_meta, f, indent=2, ensure_ascii=False)
+    print(f"\n元数据已保存: {meta_path}")
+
+
+def _rolling_cv_multi_stock(valid_df, selected_idx, selected_names, horizon, params):
+    """多股票 Walk-forward CV，按日期分割。"""
+    cfg = MULTI_STOCK_CV_CONFIG
+    train_w = cfg['train_window']
+    test_w = cfg['test_window']
+    step = cfg['step']
+    n_folds = cfg['n_folds']
+    smooth_w = max(5, horizon // 3)
+    gap = horizon + smooth_w
+
+    dates = valid_df.index.sort_values().unique()
+    if len(dates) < train_w + gap + test_w:
+        return pd.DataFrame()
+
+    all_pred, all_actual, all_dates, all_tickers = [], [], [], []
+
+    for fold_i in range(n_folds):
+        start_idx = fold_i * step
+        if start_idx + train_w + gap + test_w > len(dates):
+            break
+
+        train_start = dates[start_idx]
+        train_end = dates[start_idx + train_w - 1]
+        test_start = dates[start_idx + train_w + gap]
+        test_end_idx = min(start_idx + train_w + gap + test_w, len(dates))
+        test_end = dates[test_end_idx - 1]
+
+        # 按日期范围选取（所有股票）
+        mask_tr = (valid_df.index >= train_start) & (valid_df.index <= train_end)
+        mask_te = (valid_df.index >= test_start) & (valid_df.index <= test_end)
+
+        X_tr = valid_df.loc[mask_tr, FEATURE_COLS].values[:, selected_idx]
+        y_tr = valid_df.loc[mask_tr, f'label_{horizon}d'].values
+        X_te = valid_df.loc[mask_te, FEATURE_COLS].values[:, selected_idx]
+        y_te = valid_df.loc[mask_te, f'label_{horizon}d'].values
+        tickers_te = valid_df.loc[mask_te, 'ticker'].values
+
+        # 去NaN
+        tr_valid = ~(np.isnan(y_tr) | np.isnan(X_tr).any(axis=1))
+        te_valid = ~(np.isnan(y_te) | np.isnan(X_te).any(axis=1))
+        X_tr, y_tr = X_tr[tr_valid], y_tr[tr_valid]
+        X_te, y_te = X_te[te_valid], y_te[te_valid]
+
+        if len(X_tr) < 100 or len(X_te) < 10:
+            continue
+
+        model = create_model('lgbm')
+        model.set_params(**params)
+        model.fit(X_tr, y_tr)
+        pred = model.predict(X_te)
+
+        all_pred.extend(pred)
+        all_actual.extend(y_te)
+        all_dates.extend(valid_df.loc[mask_te].index[te_valid].tolist())
+        all_tickers.extend(tickers_te[te_valid].tolist())
+
+    if not all_pred:
+        return pd.DataFrame()
+
+    oos = pd.DataFrame({
+        'date': all_dates,
+        'pred': all_pred,
+        'actual': all_actual,
+        'ticker': all_tickers,
+    })
+    return oos.reset_index(drop=True)
+
+
+def _rolling_cv_ndx_with_model(ndx_valid, trained_model, selected_idx, selected_names, horizon):
+    """用已训练模型对纳斯达克指数做walk-forward OOS预测（用于元层）。"""
+    cfg = CV_CONFIG
+    train_w = cfg['train_window']
+    test_w = cfg['test_window']
+    step = cfg['step']
+    n_folds = cfg['n_folds']
+    smooth_w = max(5, horizon // 3)
+    gap = horizon + smooth_w
+
+    X = ndx_valid[FEATURE_COLS].values
+    y = ndx_valid[f'label_{horizon}d'].values
+    dates = ndx_valid.index
+
+    n = len(X)
+    max_start = n - train_w - gap - test_w
+    if max_start <= 0:
+        return pd.DataFrame()
+
+    starts = list(range(0, max_start + 1, step))[:n_folds]
+    all_pred, all_actual, all_dates = [], [], []
+
+    for start in starts:
+        tr_e = start + train_w
+        te_s = tr_e + gap
+        te_e = min(te_s + test_w, n)
+        if te_e <= te_s:
+            continue
+
+        X_tr, y_tr = X[start:tr_e], y[start:tr_e]
+        X_te, y_te = X[te_s:te_e], y[te_s:te_e]
+        dates_te = dates[te_s:te_e]
+
+        tr_valid = ~(np.isnan(y_tr) | np.isnan(X_tr[:, selected_idx]).any(axis=1))
+        te_valid = ~(np.isnan(y_te) | np.isnan(X_te[:, selected_idx]).any(axis=1))
+
+        if tr_valid.sum() < 50 or te_valid.sum() < 5:
+            continue
+
+        params = trained_model.get_params()
+        model = create_model('lgbm')
+        model.set_params(**params)
+        model.fit(X_tr[tr_valid][:, selected_idx], y_tr[tr_valid])
+
+        pred = model.predict(X_te[te_valid][:, selected_idx])
+        all_pred.extend(pred)
+        all_actual.extend(y_te[te_valid])
+        all_dates.extend(dates_te[te_valid].tolist())
+
+    if not all_pred:
+        return pd.DataFrame()
+
+    oos = pd.DataFrame({'date': all_dates, 'pred': all_pred, 'actual': all_actual})
+    oos = oos.drop_duplicates(subset='date', keep='last').reset_index(drop=True)
+    return oos

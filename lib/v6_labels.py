@@ -59,6 +59,31 @@ def build_direction_labels(close, horizon, rank_window=None, smooth_window=None)
     return labels
 
 
+def build_zscore_labels(close, horizon, window=252, smooth_window=None):
+    """构建 z-score 方向标签（跨股票可比）。
+
+    label = (fwd_ret - rolling_mean) / rolling_std
+    不同股票的标签在同一尺度上：+2 表示比近期均值高2个标准差。
+
+    Returns pd.Series in [-3, 3], clipped to [-1, 1]
+    """
+    if smooth_window is None:
+        smooth_window = max(5, horizon // 3)
+
+    fwd_ret = close.shift(-horizon) / close - 1
+    rolling_mean = fwd_ret.rolling(window, min_periods=60).mean()
+    rolling_std = fwd_ret.rolling(window, min_periods=60).std()
+
+    zscore = (fwd_ret - rolling_mean) / (rolling_std + 1e-10)
+
+    if smooth_window >= 3:
+        zscore = zscore.rolling(smooth_window, center=True, min_periods=1).mean()
+
+    labels = zscore.clip(-1, 1)
+    labels.name = f'label_{horizon}d'
+    return labels
+
+
 def build_all_labels(df):
     """为所有 horizon 构建方向标签。
 

@@ -153,5 +153,15 @@ def download_all(period='15y'):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='下载训练数据')
     parser.add_argument('--period', default='15y', help='下载周期 (默认 15y)')
+    parser.add_argument('--stocks', action='store_true', help='下载 Nasdaq 100 成分股')
+    parser.add_argument('--refresh', action='store_true', help='强制重新下载（忽略缓存）')
     args = parser.parse_args()
-    download_all(period=args.period)
+
+    if args.stocks:
+        from lib.ndx100_tickers import get_ndx100_tickers
+        from lib.stock_data_manager import get_all_stock_data
+        tickers = get_ndx100_tickers()
+        print(f"\n下载 Nasdaq 100 成分股 ({len(tickers)} 只)...")
+        get_all_stock_data(tickers, period=args.period, force_refresh=args.refresh)
+    else:
+        download_all(period=args.period)
